@@ -1,20 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "DAAD Result Exporter",
+  "name": "DAAD Result Downloader",
   "version": "1.0",
-  "description": "Exports DAAD scholarship search results to a CSV file.",
+  "description": "One-click download of DAAD search results to Excel/CSV.",
   "permissions": ["activeTab", "scripting"],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icon.png", 
-      "48": "icon.png",
-      "128": "icon.png"
-    }
-  },
-  "icons": {
-    "16": "icon.png",
-    "48": "icon.png",
-    "128": "icon.png"
+    "default_popup": "popup.html"
   }
 }
