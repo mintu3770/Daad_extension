@@ -1,62 +1,110 @@
-(function() {
-  // --- METHOD: THE LINK HUNTER ---
-  // Instead of looking for "cards", we look for links containing "detail" 
-  // which is how DAAD structures all their course pages.
+(async function() {
+  // --- CONFIGURATION ---
+  const DELAY_MS = 1500; // Wait 1.5 seconds between each page to avoid bans
   
-  // 1. Find all links that point to a course detail page
-  const resultLinks = document.querySelectorAll('a[href*="/detail/"]');
+  // 1. FIND ALL LINKS
+  // We look for links that contain "/detail/" (DAAD's pattern for course pages)
+  const allLinks = Array.from(document.querySelectorAll('a[href*="/detail/"]'));
   
-  // 2. Filter out duplicates (DAAD sometimes puts the link on the image AND the title)
-  const uniqueRows = new Map();
+  // Filter duplicates (DAAD puts the link on both the Image and the Title)
+  const uniqueUrls = new Set();
+  const tasks = [];
 
-  resultLinks.forEach(link => {
-    // Navigate up to find the container (the "box" holding the info)
-    // We look for the closest div that looks like a list entry
-    const card = link.closest('div.list-entry') || link.closest('div'); 
-    
-    if (card) {
-      // CLEANUP: Get text and remove weird spacing/commas
-      const rawTitle = link.innerText.trim();
-      if (rawTitle === "") return; // Skip empty links
-
-      const title = rawTitle.replace(/,/g, " -").replace(/\n/g, " ");
-      const url = link.href;
+  allLinks.forEach(link => {
+    // Only process if we haven't seen this URL yet
+    if (!uniqueUrls.has(link.href)) {
+      uniqueUrls.add(link.href);
       
-      // Try to find University Name nearby
-      // We search inside the same 'card' for common university class names
-      const uniElement = card.querySelector('.list-entry__institution') || card.querySelector('li');
-      const uni = uniElement ? uniElement.innerText.replace(/,/g, " -").trim() : "Check Link";
+      // Find the "card" container to get the basic info (Title/Uni)
+      const card = link.closest('.list-entry') || link.closest('div');
+      const title = link.innerText.trim().replace(/,/g, " -");
+      
+      let uni = "N/A";
+      if (card) {
+        const uniEl = card.querySelector('.list-entry__institution') || card.querySelector('li');
+        if (uniEl) uni = uniEl.innerText.trim().replace(/,/g, " -");
+      }
 
-      // Use URL as a unique key so we don't save the same course twice
-      if (!uniqueRows.has(url)) {
-        uniqueRows.set(url, `"${title}","${uni}","${url}"`);
+      if (title.length > 2) { // Skip empty/garbage links
+        tasks.push({ url: link.href, title: title, uni: uni });
       }
     }
   });
 
-  // 3. CHECKPOINT: Did we find anything?
-  if (uniqueRows.size === 0) {
-    alert("Still found 0 results. \n\nIMPORTANT: \n1. Make sure you are on the 'International Programmes' search page.\n2. Scroll down so the courses are actually visible on screen.");
+  if (tasks.length === 0) {
+    alert("No courses found! Please scroll down to load the list first.");
     return;
   }
 
-  // 4. Build CSV
-  let csvContent = "\uFEFFCourse Name,University,Link\n";
-  uniqueRows.forEach(row => {
-    csvContent += row + "\n";
-  });
+  // 2. NOTIFY USER (Because this takes time!)
+  const confirmStart = confirm(`Found ${tasks.length} courses.\n\nThis will take about ${Math.ceil((tasks.length * 1.5)/60)} minutes to scrape deep details.\n\nPress OK to start (Check Console for progress).`);
+  if (!confirmStart) return;
 
-  // 5. Download
+  console.log("🚀 Starting Deep Scrape...");
+  let csvContent = "\uFEFFCourse Name,University,Deadline,Language,Tuition,Link\n";
+
+  // 3. DEEP SCRAPE LOOP
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+    console.log(`[${i + 1}/${tasks.length}] Visiting: ${task.title.substring(0, 20)}...`);
+
+    try {
+      // A. Fetch the HTML of the detail page
+      const response = await fetch(task.url);
+      const htmlText = await response.text();
+      
+      // B. Parse it into a virtual document
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+
+      // C. Helper to find text by header
+      const findInfo = (keywords) => {
+        // Try Definition Lists <dt>
+        const dts = doc.querySelectorAll('dt');
+        for (const dt of dts) {
+          if (keywords.some(k => dt.textContent.toLowerCase().includes(k))) {
+            return dt.nextElementSibling ? dt.nextElementSibling.textContent.trim().replace(/(\r\n|\n|\r)/gm, " ").replace(/,/g, ";") : "N/A";
+          }
+        }
+        // Try Headers <h3>
+        const h3s = doc.querySelectorAll('h3, h4');
+        for (const h3 of h3s) {
+          if (keywords.some(k => h3.textContent.toLowerCase().includes(k))) {
+             // Grab the next paragraph or div
+             let next = h3.nextElementSibling;
+             return next ? next.textContent.trim().replace(/(\r\n|\n|\r)/gm, " ").replace(/,/g, ";") : "N/A";
+          }
+        }
+        return "Check Link";
+      };
+
+      // D. Extract the specific data points
+      const deadline = findInfo(['deadline', 'application']);
+      const lang = findInfo(['language', 'instruction']);
+      const tuition = findInfo(['tuition', 'cost', 'fees']);
+
+      // E. Add to CSV
+      csvContent += `"${task.title}","${task.uni}","${deadline}","${lang}","${tuition}","${task.url}"\n`;
+
+    } catch (err) {
+      console.error("Failed to fetch", task.url, err);
+      csvContent += `"${task.title}","${task.uni}","Error","Error","Error","${task.url}"\n`;
+    }
+
+    // F. SLEEP (Crucial to avoid crash/ban)
+    await new Promise(r => setTimeout(r, DELAY_MS));
+  }
+
+  // 4. DOWNLOAD
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const downloadLink = document.createElement("a");
   downloadLink.setAttribute("href", url);
-  downloadLink.setAttribute("download", `DAAD_Results_${uniqueRows.size}_items.csv`);
+  downloadLink.setAttribute("download", "DAAD_Deep_Results.csv");
   document.body.appendChild(downloadLink);
   downloadLink.click();
   document.body.removeChild(downloadLink);
-
-  // Success Message
-  alert(`Success! Downloaded ${uniqueRows.size} courses.`);
+  
+  alert("Done! Your deep-scrape file has been downloaded.");
 
 })();
