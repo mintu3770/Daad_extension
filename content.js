@@ -1,4 +1,3 @@
-// Listen for the message from popup.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "scrape") {
     const data = scrapeData();
@@ -6,6 +5,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       downloadCSV(data);
       sendResponse({ count: data.length });
     } else {
+      // If we fail, try to log why for the user to see in Console
+      console.warn("DAAD Scraper: No items found. Current selectors tried: .list-entry, .js-result-card, .result-item");
       sendResponse({ count: 0 });
     }
   }
@@ -14,58 +15,72 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function scrapeData() {
   const results = [];
   
-  // SELECTOR STRATEGY:
-  // DAAD usually lists items in container blocks. 
-  // We look for the main result container.
-  // Note: These class names (.list-inline, .c-srp-result-card) are best guesses 
-  // based on standard DAAD structure. 
-  
-  // Try to find all result cards.
-  // Common pattern in DAAD: IDs starting with "result-" or classes like "js-result-card"
-  let cards = document.querySelectorAll('.js-result-card, [id^="result-"], .list-entry');
+  // ---------------------------------------------------------
+  // STRATEGY 1: "International Programmes" Layout (Most common)
+  // ---------------------------------------------------------
+  let cards = document.querySelectorAll('.list-entry');
 
+  // ---------------------------------------------------------
+  // STRATEGY 2: "Scholarship Database" Layout
+  // ---------------------------------------------------------
   if (cards.length === 0) {
-      // Fallback: Try to find generic list items if specific classes fail
-      cards = document.querySelectorAll('.result-display .media'); 
+    cards = document.querySelectorAll('.result-item, .js-result-card, [id^="result-"]');
   }
 
+  // ---------------------------------------------------------
+  // STRATEGY 3: Generic fallback (Look for any large list items)
+  // ---------------------------------------------------------
+  if (cards.length === 0) {
+    // Sometimes DAAD uses simple 'media' bootstrap classes
+    cards = document.querySelectorAll('.srp-result-list .row, .media');
+  }
+
+  console.log(`DAAD Scraper: Found ${cards.length} cards.`);
+
   cards.forEach((card) => {
-    // Extract Title
-    const titleEl = card.querySelector('h3, h4, .c-srp-result-card__title, .list-entry__title');
+    // 1. Get Title
+    const titleEl = card.querySelector('h3, h4, .list-entry__title, .c-srp-result-card__title a');
     const title = titleEl ? titleEl.innerText.trim() : "N/A";
 
-    // Extract Link
-    const linkEl = card.querySelector('a');
-    const link = linkEl ? linkEl.href : "N/A";
-
-    // Extract Subtitle / University Name
-    const uniEl = card.querySelector('.c-srp-result-card__subtitle, .list-entry__subtitle, span.university');
+    // 2. Get University / Subtitle
+    const uniEl = card.querySelector('.list-entry__subtitle, .c-srp-result-card__subtitle, .university-name');
     const university = uniEl ? uniEl.innerText.trim() : "N/A";
 
-    // Extract other meta details (Location, Deadline, etc.)
-    // We grab all text and clean it up because specific class names vary wildly per page
-    const allText = card.innerText.replace(/\n/g, " | ");
+    // 3. Get Link
+    const linkEl = card.querySelector('a');
+    let link = "N/A";
+    if (linkEl) {
+      link = linkEl.href.startsWith("http") ? linkEl.href : "https://www2.daad.de" + linkEl.getAttribute("href");
+    }
 
-    results.push({
-      "Program Title": title,
-      "University": university,
-      "Link": link,
-      "Raw Details": allText // Useful backup if specific fields fail
-    });
+    // 4. Get "hard to reach" details (Location, Language, etc.)
+    // We grab all text in the card, replace newlines with pipes " | "
+    const fullText = card.innerText.replace(/(\r\n|\n|\r)/gm, " | ");
+
+    // Only add if it looks like a valid result
+    if (title !== "N/A" && title !== "") {
+      results.push({
+        "Course/Scholarship Name": title,
+        "University / Institution": university,
+        "Link": link,
+        "Full Details": fullText
+      });
+    }
   });
 
   return results;
 }
 
 function downloadCSV(data) {
-  // Convert JSON to CSV
+  if (!data || !data.length) return;
+
   const headers = Object.keys(data[0]);
   const csvRows = [];
   
-  // Add Header Row
+  // Header
   csvRows.push(headers.join(","));
 
-  // Add Data Rows
+  // Rows
   for (const row of data) {
     const values = headers.map(header => {
       const escaped = ('' + row[header]).replace(/"/g, '\\"');
@@ -75,14 +90,13 @@ function downloadCSV(data) {
   }
 
   const csvString = csvRows.join("\n");
-
-  // Trigger Download
   const blob = new Blob([csvString], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
+  
   const a = document.createElement("a");
-  a.setAttribute("hidden", "");
-  a.setAttribute("href", url);
-  a.setAttribute("download", "daad_shortlist.csv");
+  a.style.display = "none";
+  a.href = url;
+  a.download = "daad_results.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
