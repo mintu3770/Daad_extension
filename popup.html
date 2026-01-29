@@ -2,23 +2,36 @@
 <html>
 <head>
   <style>
-    body { width: 200px; padding: 10px; font-family: sans-serif; }
-    button { 
-      width: 100%; 
-      padding: 10px; 
-      background-color: #004d9e; /* DAAD Blue */
-      color: white; 
-      border: none; 
-      cursor: pointer; 
-      border-radius: 4px;
+    body { width: 250px; padding: 15px; font-family: 'Segoe UI', sans-serif; text-align: center; }
+    h3 { margin-top: 0; color: #333; }
+    p { font-size: 12px; color: #666; margin-bottom: 15px; }
+    button {
+      width: 100%; padding: 12px;
+      background-color: #004d9e; color: white;
+      border: none; border-radius: 6px;
+      font-weight: bold; cursor: pointer;
+      transition: background 0.2s;
     }
     button:hover { background-color: #003366; }
+    #status { margin-top: 10px; font-size: 12px; color: green; display: none;}
   </style>
 </head>
 <body>
   <h3>DAAD Exporter</h3>
-  <p>Scroll down to load all results first!</p>
-  <button id="downloadBtn">Download CSV</button>
-  <script src="popup.js"></script>
+  <p>1. Scroll down to load all results.<br>2. Click the button below.</p>
+  <button id="downloadBtn">📥 Download Excel/CSV</button>
+  <div id="status">Processing...</div>
+
+  <script>
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      document.getElementById("status").style.display = "block";
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.scripting.executeScript({
+          target: { tabId: tabs[0].id },
+          files: ["content.js"]
+        });
+      });
+    });
+  </script>
 </body>
 </html>
