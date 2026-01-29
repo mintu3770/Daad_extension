@@ -17,28 +17,24 @@
     overlay.innerHTML = text;
   }
 
-  // --- LISTEN FOR COMMAND ---
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "run_all") orchestrator();
   });
 
-  // --- ORCHESTRATOR ---
   async function orchestrator() {
     try {
-      updateOverlay("<b>Phase 1: Expanding List...</b><br>Do not touch the page.");
-      const count = await autoLoad(); 
+      updateOverlay("<b>Phase 1: Expanding...</b><br>Do not touch the page.");
+      const count = await autoLoad();
       
-      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Analyzing text structure...`);
+      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Applying Smart Fixes...`);
       await new Promise(r => setTimeout(r, 1000)); 
       await startScrape();
-      
     } catch (err) {
       console.error(err);
       updateOverlay("<b>Error:</b> " + err.message);
     }
   }
 
-  // --- LOGIC 1: AUTO-LOADER ---
   async function autoLoad() {
     let keepGoing = true;
     let clicks = 0;
@@ -63,7 +59,7 @@
       if (moreBtn) { 
         moreBtn.click();
         clicks++;
-        updateOverlay(`<b>Expanding List...</b><br>Clicked 'More' ${clicks} times.<br>Found: ${currentCount}`);
+        updateOverlay(`<b>Expanding...</b><br>Clicked 'More' ${clicks} times.<br>Found: ${currentCount}`);
         await new Promise(r => setTimeout(r, 2500)); 
       } else {
         keepGoing = false;
@@ -72,27 +68,19 @@
     return document.querySelectorAll('a[href*="/detail/"]').length;
   }
 
-  // --- LOGIC 2: SCRAPER (FIXED FOR MISMATCH) ---
   async function startScrape() {
-    // 1. Collect ALL Links
+    // 1. Collect Links (Longest Text Wins Strategy)
     const allLinks = Array.from(document.querySelectorAll('a[href*="/detail/"]'));
     const urlMap = new Map();
 
-    // 2. INTELLIGENT SELECTION (The Fix)
-    // DAAD has multiple links per course (Image, Badge, Title).
-    // We strictly keep the one with the LONGEST text (The Title).
     allLinks.forEach(link => {
         const fullText = link.innerText.trim();
         const href = link.href;
-
-        if (fullText.length > 2) { // Ignore empty icons
+        if (fullText.length > 2) { 
             if (!urlMap.has(href)) {
-                // New URL? Add it.
                 urlMap.set(href, fullText);
             } else {
-                // Existing URL? Check if this text is better (longer).
-                const currentText = urlMap.get(href);
-                if (fullText.length > currentText.length) {
+                if (fullText.length > urlMap.get(href).length) {
                     urlMap.set(href, fullText);
                 }
             }
@@ -112,22 +100,41 @@
       const task = tasks[i];
       updateOverlay(`<b>Scraping: ${i + 1}/${tasks.length}</b><br>${task.rawTitle.substring(0,30)}...`);
 
-      // 3. SPLITTING LOGIC (Handles both layouts)
+      // --- THE SMART FIX ---
       let courseName = "N/A", uniName = "N/A", cityName = "N/A";
-      
-      // Clean up common prefixes that mess up data
-      let cleanTitle = task.rawTitle.replace("Master's degree", "").replace("Bachelor's degree", "").trim();
 
+      // 1. Remove Labels AND loose punctuation
+      // Example: "Master's degree • AI" -> " • AI" -> "AI"
+      let cleanTitle = task.rawTitle
+        .replace(/Master's degree/gi, "")
+        .replace(/Bachelor's degree/gi, "")
+        .trim();
+
+      // 2. Remove leading bullet points (The "Ghost Bullet" Fix)
+      // Removes any dots, dashes, or bars from the START of the string
+      cleanTitle = cleanTitle.replace(/^[•·\-\|]\s*/, "");
+
+      // 3. Smart Split
+      // We ignore empty parts to prevent column shifting
       if (cleanTitle.includes("•")) {
-          // Scenario A: "Course • Uni • City" (Screenshot 1)
-          const parts = cleanTitle.split("•");
-          courseName = parts[0]?.trim() || cleanTitle;
-          uniName = parts[1]?.trim() || "N/A";
-          cityName = parts[2]?.trim() || "N/A";
+          const parts = cleanTitle.split("•").map(p => p.trim()).filter(p => p.length > 0);
+          
+          if (parts.length >= 3) {
+             // Perfect: Course • Uni • City
+             courseName = parts[0];
+             uniName = parts[1];
+             cityName = parts[2];
+          } else if (parts.length === 2) {
+             // Partial: Course • Uni
+             courseName = parts[0];
+             uniName = parts[1];
+          } else {
+             // Just Course
+             courseName = parts[0];
+          }
       } else {
-          // Scenario B: Just Title (Screenshot 2 might fallback to this)
+          // No bullets found
           courseName = cleanTitle;
-          // Uni/City will be fetched from inside the page below
       }
 
       try {
@@ -137,15 +144,12 @@
         const doc = parser.parseFromString(text, "text/html");
         
         const clean = (t) => t ? t.textContent.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, ' ').replace(/,/g, ";").trim() : "N/A";
-        
-        // Helper to find data
         const getDef = (keys) => {
             const el = Array.from(doc.querySelectorAll('dt')).find(dt => keys.some(k => dt.textContent.toLowerCase().includes(k)));
             return el?.nextElementSibling ? clean(el.nextElementSibling) : "N/A";
         };
 
-        // 4. FALLBACK EXTRACTION
-        // If splitting didn't find Uni/City, grab it from the page header
+        // Fallback: If split failed, grab Uni/City from page header
         if (uniName === "N/A" || uniName.length < 3) {
             uniName = clean(doc.querySelector('.c-detail-header__institution'));
         }
@@ -167,11 +171,11 @@
     const url = URL.createObjectURL(blob);
     const dl = document.createElement("a");
     dl.href = url;
-    dl.download = `DAAD_Final_Corrected.csv`;
+    dl.download = `DAAD_Corrected_List.csv`;
     document.body.appendChild(dl);
     dl.click();
     
-    updateOverlay("<b>✅ Done!</b><br>Mismatch fixed.");
+    updateOverlay("<b>✅ Success!</b><br>Columns aligned.");
     setTimeout(() => overlay.style.display = 'none', 6000);
   }
 })();
