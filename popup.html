@@ -2,82 +2,43 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  
   <style>
     body { 
-      width: 260px; 
-      padding: 0; 
-      margin: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-      text-align: center; 
+      width: 260px; padding: 0; margin: 0;
+      font-family: 'Segoe UI', sans-serif; text-align: center; 
       background-color: #f9f9f9;
     }
-    
-    /* Personal Header */
-    .header {
-      background-color: #004d9e; /* DAAD Blue */
-      color: white;
-      padding: 15px;
-      margin-bottom: 15px;
-    }
+    .header { background-color: #004d9e; color: white; padding: 15px; margin-bottom: 15px; }
     h3 { margin: 0; font-size: 18px; }
     p { margin: 5px 0 0; font-size: 12px; opacity: 0.8; }
-
-    /* Buttons */
     .container { padding: 0 15px 15px; }
-    button {
-      width: 100%; 
-      padding: 12px; 
-      margin-bottom: 10px;
-      color: white; 
-      border: none; 
-      border-radius: 6px; 
-      cursor: pointer;
-      font-weight: bold; 
-      font-size: 13px;
-      transition: transform 0.1s;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    button:active { transform: scale(0.98); }
 
-    #loadBtn { background-color: #f0ad4e; color: #333; }
-    #loadBtn:hover { background-color: #ec971f; }
-    
-    #scrapeBtn { background-color: #28a745; }
-    #scrapeBtn:hover { background-color: #218838; }
+    /* The Magic Button */
+    #magicBtn {
+      width: 100%; padding: 15px; margin-bottom: 10px;
+      color: white; border: none; border-radius: 6px; cursor: pointer;
+      font-weight: bold; font-size: 14px;
+      background: linear-gradient(135deg, #004d9e 0%, #00c6ff 100%);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+      transition: transform 0.1s;
+    }
+    #magicBtn:active { transform: scale(0.98); }
+    #magicBtn:hover { opacity: 0.9; }
 
     #status { font-size: 11px; color: #666; margin-top: 5px; min-height: 20px;}
-
-    /* Personal Footer */
-    .footer {
-      margin-top: 15px;
-      font-size: 10px;
-      color: #aaa;
-      border-top: 1px solid #eee;
-      padding-top: 10px;
-    }
+    .footer { margin-top: 15px; font-size: 10px; color: #aaa; border-top: 1px solid #eee; padding-top: 10px; }
   </style>
 </head>
 <body>
-
   <div class="header">
     <h3>Mintu's Helper 🎓</h3>
-    <p>DAAD Shortlist Automator</p>
+    <p>One-Click Automation</p>
   </div>
-
   <div class="container">
-    <button id="loadBtn">Step 1: Expand List ⚡</button>
-    
-    <button id="scrapeBtn">Step 2: Download Excel 📥</button>
-    
-    <div id="status">Ready to work.</div>
-
-    <div class="footer">
-      Designed by Mintu<br>
-      CS & Data Science @ VIT
-    </div>
+    <button id="magicBtn">🚀 Auto-Download Everything</button>
+    <div id="status">Ready to start.</div>
+    <div class="footer">Designed by Mintu<br>CS & Data Science @ VIT</div>
   </div>
-  
   <script src="popup.js"></script>
 </body>
 </html>
