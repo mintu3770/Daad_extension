@@ -1,5 +1,4 @@
 (function() {
-  // Prevent multiple injections
   if (window.hasRun) return;
   window.hasRun = true;
 
@@ -8,7 +7,8 @@
   Object.assign(overlay.style, {
     position: 'fixed', bottom: '20px', right: '20px', padding: '15px',
     backgroundColor: '#222', color: '#fff', zIndex: '99999',
-    borderRadius: '8px', fontFamily: 'sans-serif', fontSize: '13px', display: 'none'
+    borderRadius: '8px', fontFamily: 'sans-serif', fontSize: '13px', display: 'none',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
   });
   document.body.appendChild(overlay);
 
@@ -17,64 +17,66 @@
     overlay.innerHTML = text;
   }
 
-  // --- ACTION LISTENER ---
+  // --- LISTEN FOR COMMAND ---
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "load") autoLoad();
-    if (request.action === "scrape") startScrape();
+    if (request.action === "run_all") orchestrator();
   });
 
-  // --- FEATURE 1: AUTO-LOAD ALL (With Smart Stop) ---
+  // --- MAIN ORCHESTRATOR (The Chain) ---
+  async function orchestrator() {
+    try {
+      // Phase 1: Expand
+      updateOverlay("<b>Phase 1: Expanding List...</b><br>Do not touch the page.");
+      const count = await autoLoad(); // Wait for this to finish completely
+      
+      // Phase 2: Scrape
+      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Preparing download.`);
+      await new Promise(r => setTimeout(r, 1000)); // Brief pause for stability
+      await startScrape();
+      
+    } catch (err) {
+      console.error(err);
+      updateOverlay("<b>Error:</b> " + err.message);
+    }
+  }
+
+  // --- LOGIC 1: AUTO-LOADER ---
   async function autoLoad() {
-    updateOverlay("<b>Auto-Loading...</b><br>Do not touch the page.");
-    
     let keepGoing = true;
     let clicks = 0;
     let previousCount = 0;
 
     while (keepGoing) {
-      // 1. Get current count
       const currentCount = document.querySelectorAll('a[href*="/detail/"]').length;
       
-      // 2. STOP CHECK: If we clicked but count didn't grow, we are done.
-      if (clicks > 0 && currentCount === previousCount) {
-        keepGoing = false;
-        break;
-      }
-      
-      previousCount = currentCount; // Update for next comparison
+      // Stop condition: If we clicked but count didn't change
+      if (clicks > 0 && currentCount === previousCount) break;
+      previousCount = currentCount;
 
-      // 3. Scroll to bottom
       window.scrollTo(0, document.body.scrollHeight);
       await new Promise(r => setTimeout(r, 1000));
 
-      // 4. Find Button
       const buttons = Array.from(document.querySelectorAll('button, a.btn'));
       const moreBtn = buttons.find(b => 
         (b.innerText.toLowerCase().includes('more') || 
          b.innerText.toLowerCase().includes('mehr') ||
          b.innerText.toLowerCase().includes('show')) &&
-        b.offsetParent !== null // Must be visible
+        b.offsetParent !== null
       );
 
       if (moreBtn) { 
         moreBtn.click();
         clicks++;
-        updateOverlay(`<b>Expanding...</b><br>Clicked 'More' ${clicks} times.<br>Count: ${currentCount}`);
-        
-        // Wait longer for the server to reply (2.5 seconds)
+        updateOverlay(`<b>Expanding List...</b><br>Clicked 'More' ${clicks} times.<br>Found: ${currentCount}`);
         await new Promise(r => setTimeout(r, 2500)); 
       } else {
-        // No button found = End of list
         keepGoing = false;
       }
     }
-    
-    const finalCount = document.querySelectorAll('a[href*="/detail/"]').length;
-    updateOverlay(`<b>Finished!</b><br>Found ${finalCount} courses.<br>Now click 'Step 2'.`);
-    alert(`Expansion Complete!\n\nI found ${finalCount} courses.\n\nYou can now click 'Step 2: Download Excel'.`);
+    return document.querySelectorAll('a[href*="/detail/"]').length;
   }
 
-  // --- FEATURE 2: THE SCRAPER (No Details Column) ---
+  // --- LOGIC 2: SCRAPER ---
   async function startScrape() {
     const allLinks = Array.from(document.querySelectorAll('a[href*="/detail/"]'));
     const uniqueUrls = new Set();
@@ -88,31 +90,17 @@
         }
     });
 
-    if (tasks.length === 0) {
-      alert("Error: 0 items found. Did you run Step 1?");
-      return;
-    }
-
-    updateOverlay(`<b>Starting Scrape...</b><br>Queue: ${tasks.length} items.`);
-
-    // --- CSV HEADER (Details Removed) ---
     let csvContent = "\uFEFFCourse Name,University,City,Tuition,Language,Deadline,Link\n";
     
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
       updateOverlay(`<b>Scraping: ${i + 1}/${tasks.length}</b><br>${task.rawTitle.substring(0,25)}...`);
 
-      // Title Splitting Logic
+      // Title Splitting
       let courseName = "N/A", uniName = "N/A", cityName = "N/A";
       const parts = task.rawTitle.split("•");
-
       if (parts.length >= 3) {
-          courseName = parts[0].trim();
-          uniName = parts[1].trim();
-          cityName = parts[2].trim();
-      } else if (parts.length === 2) {
-          courseName = parts[0].trim();
-          uniName = parts[1].trim();
+          courseName = parts[0].trim(); uniName = parts[1].trim(); cityName = parts[2].trim();
       } else {
           courseName = task.rawTitle;
       }
@@ -131,28 +119,25 @@
 
         if (uniName === "N/A") uniName = clean(doc.querySelector('.c-detail-header__institution'));
         if (cityName === "N/A") cityName = clean(doc.querySelector('.c-detail-header__city')).replace(/Germany/i,'').trim();
-
         const tuition = getDef(['tuition', 'fees', 'cost']);
         const lang = getDef(['language', 'instruction']);
         const deadline = getDef(['deadline', 'application']);
         
-        // --- ADD TO CSV (Details Removed) ---
         csvContent += `"${courseName}","${uniName}","${cityName}","${tuition}","${lang}","${deadline}","${task.url}"\n`;
 
       } catch (e) { console.error(e); }
-      
-      // Fast delay
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 800)); // Slightly faster since user isn't clicking
     }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const dl = document.createElement("a");
     dl.href = url;
-    dl.download = `DAAD_Results_(${tasks.length}).csv`;
+    dl.download = `DAAD_Final_List.csv`;
     document.body.appendChild(dl);
     dl.click();
-    updateOverlay("<b>Done!</b>");
-    setTimeout(() => overlay.style.display = 'none', 5000);
+    
+    updateOverlay("<b>✅ Process Complete!</b><br>Check your downloads folder.");
+    setTimeout(() => overlay.style.display = 'none', 6000);
   }
 })();
