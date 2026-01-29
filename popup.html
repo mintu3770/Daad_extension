@@ -2,36 +2,20 @@
 <html>
 <head>
   <style>
-    body { width: 250px; padding: 15px; font-family: 'Segoe UI', sans-serif; text-align: center; }
-    h3 { margin-top: 0; color: #333; }
-    p { font-size: 12px; color: #666; margin-bottom: 15px; }
+    body { width: 220px; padding: 15px; font-family: sans-serif; text-align: center; }
     button {
-      width: 100%; padding: 12px;
+      width: 100%; padding: 10px;
       background-color: #004d9e; color: white;
-      border: none; border-radius: 6px;
-      font-weight: bold; cursor: pointer;
-      transition: background 0.2s;
+      border: none; border-radius: 4px; cursor: pointer;
     }
     button:hover { background-color: #003366; }
-    #status { margin-top: 10px; font-size: 12px; color: green; display: none;}
+    #msg { font-size: 12px; margin-top: 10px; color: #555; }
   </style>
 </head>
 <body>
   <h3>DAAD Exporter</h3>
-  <p>1. Scroll down to load all results.<br>2. Click the button below.</p>
-  <button id="downloadBtn">📥 Download Excel/CSV</button>
-  <div id="status">Processing...</div>
-
-  <script>
-    document.getElementById("downloadBtn").addEventListener("click", () => {
-      document.getElementById("status").style.display = "block";
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
-          files: ["content.js"]
-        });
-      });
-    });
-  </script>
+  <button id="downloadBtn">Download List</button>
+  <p id="msg">Open DAAD results first.</p>
+  <script src="popup.js"></script>
 </body>
 </html>
