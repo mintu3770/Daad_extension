@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Mintu's - DAAD Helper",
+  "name": "DAAD Helper",
   "version": "1.0",
-  "description": "Custom tool for Mintu to download DAAD shortlists.",
+  "description": "Custom tool  to download DAAD shortlists.",
   "permissions": ["activeTab", "scripting"],
   "action": {
     "default_popup": "popup.html"
