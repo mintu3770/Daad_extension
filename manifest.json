@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "DAAD Shortlist Downloader",
+  "version": "1.0",
+  "description": "Exports DAAD scholarship/course search results to a CSV file.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Download DAAD List"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.daad.de/*", "*://*.daad.in/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
