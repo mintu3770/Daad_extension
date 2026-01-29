@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DAAD Result Downloader",
+  "name": "Mintu's - DAAD Helper",
   "version": "1.0",
-  "description": "One-click download of DAAD search results to Excel/CSV.",
+  "description": "Custom tool for Mintu to download DAAD shortlists.",
   "permissions": ["activeTab", "scripting"],
   "action": {
     "default_popup": "popup.html"
