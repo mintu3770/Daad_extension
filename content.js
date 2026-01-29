@@ -23,10 +23,10 @@
 
   async function orchestrator() {
     try {
-      updateOverlay("<b>Phase 1: Expanding...</b><br>Do not touch the page.");
+      updateOverlay("<b>Phase 1: Expanding...</b><br>Initializing Observer...");
       const count = await autoLoad();
       
-      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Applying Smart Fixes...`);
+      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Smart-Parsing Data...`);
       await new Promise(r => setTimeout(r, 1000)); 
       await startScrape();
     } catch (err) {
@@ -35,19 +35,50 @@
     }
   }
 
+  // --- NEW: THE PROFESSIONAL WAITER (MutationObserver) ---
+  function waitForNewEntries(previousCount, timeout = 10000) {
+    return new Promise((resolve) => {
+      // Selector for the course links
+      const selector = 'a[href*="/detail/"]';
+      
+      // 1. Check immediately (in case it loaded instantly)
+      if (document.querySelectorAll(selector).length > previousCount) {
+         return resolve(true);
+      }
+
+      // 2. Setup the "Sensor"
+      const observer = new MutationObserver(() => {
+         const currentCount = document.querySelectorAll(selector).length;
+         if (currentCount > previousCount) {
+           observer.disconnect(); // Stop watching to save resources
+           resolve(true);
+         }
+      });
+
+      // 3. Start Watching the Body for changes
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      // 4. Safety Timeout (If network dies, don't hang forever)
+      setTimeout(() => {
+        observer.disconnect();
+        resolve(false); // Resolved false means "Timed out, no new items"
+      }, timeout);
+    });
+  }
+
+  // --- UPGRADED AUTO-LOADER ---
   async function autoLoad() {
     let keepGoing = true;
     let clicks = 0;
-    let previousCount = 0;
 
     while (keepGoing) {
-      const currentCount = document.querySelectorAll('a[href*="/detail/"]').length;
-      if (clicks > 0 && currentCount === previousCount) break;
-      previousCount = currentCount;
+      const links = document.querySelectorAll('a[href*="/detail/"]');
+      const previousCount = links.length;
 
+      // Scroll to bottom (Trigger lazy load elements)
       window.scrollTo(0, document.body.scrollHeight);
-      await new Promise(r => setTimeout(r, 1000));
-
+      
+      // Find "Show More" Button
       const buttons = Array.from(document.querySelectorAll('button, a.btn'));
       const moreBtn = buttons.find(b => 
         (b.innerText.toLowerCase().includes('more') || 
@@ -59,9 +90,19 @@
       if (moreBtn) { 
         moreBtn.click();
         clicks++;
-        updateOverlay(`<b>Expanding...</b><br>Clicked 'More' ${clicks} times.<br>Found: ${currentCount}`);
-        await new Promise(r => setTimeout(r, 2500)); 
+        updateOverlay(`<b>Expanding...</b><br>Clicked 'More' ${clicks} times.<br>Count: ${previousCount}`);
+        
+        // --- THE UPGRADE IS HERE ---
+        // Instead of sleeping 2.5s, we wait EXACTLY until new items appear.
+        // This makes it fast on fast wifi, and reliable on slow wifi.
+        const success = await waitForNewEntries(previousCount);
+        
+        if (!success) {
+           // If we waited 10s and nothing appeared, assume end of list
+           keepGoing = false;
+        }
       } else {
+        // No button found
         keepGoing = false;
       }
     }
@@ -69,10 +110,10 @@
   }
 
   async function startScrape() {
-    // 1. Collect Links (Longest Text Wins)
     const allLinks = Array.from(document.querySelectorAll('a[href*="/detail/"]'));
     const urlMap = new Map();
 
+    // Deduplication Logic
     allLinks.forEach(link => {
         const fullText = link.innerText.trim();
         const href = link.href;
@@ -100,29 +141,27 @@
       const task = tasks[i];
       updateOverlay(`<b>Scraping: ${i + 1}/${tasks.length}</b><br>${task.rawTitle.substring(0,30)}...`);
 
-      // Smart Split Logic
-      let courseName = "N/A", uniName = "N/A", cityName = "N/A";
+      // Cleaning & Parsing Logic
       let cleanTitle = task.rawTitle
         .replace(/Master's degree/gi, "")
         .replace(/Bachelor's degree/gi, "")
         .trim();
-      
       cleanTitle = cleanTitle.replace(/^[•·\-\|]\s*/, "");
 
+      let courseName = "N/A", uniName = "N/A", cityName = "N/A";
       if (cleanTitle.includes("•")) {
           const parts = cleanTitle.split("•").map(p => p.trim()).filter(p => p.length > 0);
-          if (parts.length >= 3) {
-             courseName = parts[0]; uniName = parts[1]; cityName = parts[2];
-          } else if (parts.length === 2) {
-             courseName = parts[0]; uniName = parts[1];
-          } else {
-             courseName = parts[0];
-          }
+          if (parts.length >= 3) { courseName = parts[0]; uniName = parts[1]; cityName = parts[2]; }
+          else if (parts.length === 2) { courseName = parts[0]; uniName = parts[1]; }
+          else { courseName = parts[0]; }
       } else {
           courseName = cleanTitle;
       }
 
       try {
+        // NOTE: We KEEP setTimeout here for "Rate Limiting". 
+        // Removing this does not make it professional; it makes it a DDoS attack.
+        // Professional scrapers always throttle requests to respect the server.
         const response = await fetch(task.url);
         const text = await response.text();
         const parser = new DOMParser();
@@ -134,12 +173,8 @@
             return el?.nextElementSibling ? clean(el.nextElementSibling) : "N/A";
         };
 
-        if (uniName === "N/A" || uniName.length < 3) {
-            uniName = clean(doc.querySelector('.c-detail-header__institution'));
-        }
-        if (cityName === "N/A" || cityName.length < 3) {
-            cityName = clean(doc.querySelector('.c-detail-header__city')).replace(/Germany/i,'').trim();
-        }
+        if (uniName === "N/A" || uniName.length < 3) uniName = clean(doc.querySelector('.c-detail-header__institution'));
+        if (cityName === "N/A" || cityName.length < 3) cityName = clean(doc.querySelector('.c-detail-header__city')).replace(/Germany/i,'').trim();
 
         const tuition = getDef(['tuition', 'fees', 'cost']);
         const lang = getDef(['language', 'instruction']);
@@ -148,27 +183,21 @@
         csvContent += `"${courseName}","${uniName}","${cityName}","${tuition}","${lang}","${deadline}","${task.url}"\n`;
 
       } catch (e) { console.error(e); }
+      
+      // Professional Rate Limiting (Do not remove)
       await new Promise(r => setTimeout(r, 800)); 
     }
 
-    // --- NEW FEATURE: ASK FOR FILENAME ---
+    // Save File
     let userFilename = prompt("Enter a name for your file:", "DAAD_Shortlist");
-    
-    // Fallback if they hit Cancel
-    if (!userFilename) {
-        userFilename = "DAAD_Shortlist"; 
-    }
-    
-    // Auto-add .csv if missing
-    if (!userFilename.toLowerCase().endsWith(".csv")) {
-        userFilename += ".csv";
-    }
+    if (!userFilename) userFilename = "DAAD_Shortlist";
+    if (!userFilename.toLowerCase().endsWith(".csv")) userFilename += ".csv";
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const dl = document.createElement("a");
     dl.href = url;
-    dl.download = userFilename; // Use user's name
+    dl.download = userFilename;
     document.body.appendChild(dl);
     dl.click();
     
