@@ -22,16 +22,14 @@
     if (request.action === "run_all") orchestrator();
   });
 
-  // --- MAIN ORCHESTRATOR (The Chain) ---
+  // --- ORCHESTRATOR ---
   async function orchestrator() {
     try {
-      // Phase 1: Expand
       updateOverlay("<b>Phase 1: Expanding List...</b><br>Do not touch the page.");
-      const count = await autoLoad(); // Wait for this to finish completely
+      const count = await autoLoad(); 
       
-      // Phase 2: Scrape
-      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Preparing download.`);
-      await new Promise(r => setTimeout(r, 1000)); // Brief pause for stability
+      updateOverlay(`<b>Phase 2: Scraping ${count} items...</b><br>Analyzing text structure...`);
+      await new Promise(r => setTimeout(r, 1000)); 
       await startScrape();
       
     } catch (err) {
@@ -48,8 +46,6 @@
 
     while (keepGoing) {
       const currentCount = document.querySelectorAll('a[href*="/detail/"]').length;
-      
-      // Stop condition: If we clicked but count didn't change
       if (clicks > 0 && currentCount === previousCount) break;
       previousCount = currentCount;
 
@@ -76,33 +72,62 @@
     return document.querySelectorAll('a[href*="/detail/"]').length;
   }
 
-  // --- LOGIC 2: SCRAPER ---
+  // --- LOGIC 2: SCRAPER (FIXED FOR MISMATCH) ---
   async function startScrape() {
+    // 1. Collect ALL Links
     const allLinks = Array.from(document.querySelectorAll('a[href*="/detail/"]'));
-    const uniqueUrls = new Set();
-    const tasks = [];
+    const urlMap = new Map();
 
+    // 2. INTELLIGENT SELECTION (The Fix)
+    // DAAD has multiple links per course (Image, Badge, Title).
+    // We strictly keep the one with the LONGEST text (The Title).
     allLinks.forEach(link => {
         const fullText = link.innerText.trim();
-        if (!uniqueUrls.has(link.href) && fullText.length > 5) {
-            uniqueUrls.add(link.href);
-            tasks.push({ url: link.href, rawTitle: fullText });
+        const href = link.href;
+
+        if (fullText.length > 2) { // Ignore empty icons
+            if (!urlMap.has(href)) {
+                // New URL? Add it.
+                urlMap.set(href, fullText);
+            } else {
+                // Existing URL? Check if this text is better (longer).
+                const currentText = urlMap.get(href);
+                if (fullText.length > currentText.length) {
+                    urlMap.set(href, fullText);
+                }
+            }
         }
     });
+
+    const tasks = Array.from(urlMap, ([url, title]) => ({ url, rawTitle: title }));
+
+    if (tasks.length === 0) {
+      alert("Error: 0 items found. Did you run Step 1?");
+      return;
+    }
 
     let csvContent = "\uFEFFCourse Name,University,City,Tuition,Language,Deadline,Link\n";
     
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
-      updateOverlay(`<b>Scraping: ${i + 1}/${tasks.length}</b><br>${task.rawTitle.substring(0,25)}...`);
+      updateOverlay(`<b>Scraping: ${i + 1}/${tasks.length}</b><br>${task.rawTitle.substring(0,30)}...`);
 
-      // Title Splitting
+      // 3. SPLITTING LOGIC (Handles both layouts)
       let courseName = "N/A", uniName = "N/A", cityName = "N/A";
-      const parts = task.rawTitle.split("•");
-      if (parts.length >= 3) {
-          courseName = parts[0].trim(); uniName = parts[1].trim(); cityName = parts[2].trim();
+      
+      // Clean up common prefixes that mess up data
+      let cleanTitle = task.rawTitle.replace("Master's degree", "").replace("Bachelor's degree", "").trim();
+
+      if (cleanTitle.includes("•")) {
+          // Scenario A: "Course • Uni • City" (Screenshot 1)
+          const parts = cleanTitle.split("•");
+          courseName = parts[0]?.trim() || cleanTitle;
+          uniName = parts[1]?.trim() || "N/A";
+          cityName = parts[2]?.trim() || "N/A";
       } else {
-          courseName = task.rawTitle;
+          // Scenario B: Just Title (Screenshot 2 might fallback to this)
+          courseName = cleanTitle;
+          // Uni/City will be fetched from inside the page below
       }
 
       try {
@@ -112,13 +137,22 @@
         const doc = parser.parseFromString(text, "text/html");
         
         const clean = (t) => t ? t.textContent.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, ' ').replace(/,/g, ";").trim() : "N/A";
+        
+        // Helper to find data
         const getDef = (keys) => {
             const el = Array.from(doc.querySelectorAll('dt')).find(dt => keys.some(k => dt.textContent.toLowerCase().includes(k)));
             return el?.nextElementSibling ? clean(el.nextElementSibling) : "N/A";
         };
 
-        if (uniName === "N/A") uniName = clean(doc.querySelector('.c-detail-header__institution'));
-        if (cityName === "N/A") cityName = clean(doc.querySelector('.c-detail-header__city')).replace(/Germany/i,'').trim();
+        // 4. FALLBACK EXTRACTION
+        // If splitting didn't find Uni/City, grab it from the page header
+        if (uniName === "N/A" || uniName.length < 3) {
+            uniName = clean(doc.querySelector('.c-detail-header__institution'));
+        }
+        if (cityName === "N/A" || cityName.length < 3) {
+            cityName = clean(doc.querySelector('.c-detail-header__city')).replace(/Germany/i,'').trim();
+        }
+
         const tuition = getDef(['tuition', 'fees', 'cost']);
         const lang = getDef(['language', 'instruction']);
         const deadline = getDef(['deadline', 'application']);
@@ -126,18 +160,18 @@
         csvContent += `"${courseName}","${uniName}","${cityName}","${tuition}","${lang}","${deadline}","${task.url}"\n`;
 
       } catch (e) { console.error(e); }
-      await new Promise(r => setTimeout(r, 800)); // Slightly faster since user isn't clicking
+      await new Promise(r => setTimeout(r, 800)); 
     }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const dl = document.createElement("a");
     dl.href = url;
-    dl.download = `DAAD_Final_List.csv`;
+    dl.download = `DAAD_Final_Corrected.csv`;
     document.body.appendChild(dl);
     dl.click();
     
-    updateOverlay("<b>✅ Process Complete!</b><br>Check your downloads folder.");
+    updateOverlay("<b>✅ Done!</b><br>Mismatch fixed.");
     setTimeout(() => overlay.style.display = 'none', 6000);
   }
 })();
