@@ -1,103 +1,48 @@
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "scrape") {
-    const data = scrapeData();
-    if (data.length > 0) {
-      downloadCSV(data);
-      sendResponse({ count: data.length });
-    } else {
-      // If we fail, try to log why for the user to see in Console
-      console.warn("DAAD Scraper: No items found. Current selectors tried: .list-entry, .js-result-card, .result-item");
-      sendResponse({ count: 0 });
-    }
-  }
-});
-
-function scrapeData() {
-  const results = [];
+(function() {
+  // 1. SELECTORS (You must verify these using 'Inspect Element' on daad.de)
+  // Look for the container that wraps ONE scholarship result.
+  const CARD_SELECTOR = ".list-entry"; 
   
-  // ---------------------------------------------------------
-  // STRATEGY 1: "International Programmes" Layout (Most common)
-  // ---------------------------------------------------------
-  let cards = document.querySelectorAll('.list-entry');
+  // Look for the title inside that card
+  const TITLE_SELECTOR = "h3"; 
+  
+  // Look for the link inside that card
+  const LINK_SELECTOR = "a"; 
 
-  // ---------------------------------------------------------
-  // STRATEGY 2: "Scholarship Database" Layout
-  // ---------------------------------------------------------
+  // 2. Data Extraction
+  const cards = document.querySelectorAll(CARD_SELECTOR);
+  
   if (cards.length === 0) {
-    cards = document.querySelectorAll('.result-item, .js-result-card, [id^="result-"]');
+    alert("No results found! Please check the CSS Selectors in content.js");
+    return;
   }
 
-  // ---------------------------------------------------------
-  // STRATEGY 3: Generic fallback (Look for any large list items)
-  // ---------------------------------------------------------
-  if (cards.length === 0) {
-    // Sometimes DAAD uses simple 'media' bootstrap classes
-    cards = document.querySelectorAll('.srp-result-list .row, .media');
-  }
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += "Title,URL,Details\n"; // Header row
 
-  console.log(`DAAD Scraper: Found ${cards.length} cards.`);
+  cards.forEach(card => {
+    // Extract Title
+    const titleElement = card.querySelector(TITLE_SELECTOR);
+    let title = titleElement ? titleElement.innerText.replace(/,/g, "") : "N/A";
 
-  cards.forEach((card) => {
-    // 1. Get Title
-    const titleEl = card.querySelector('h3, h4, .list-entry__title, .c-srp-result-card__title a');
-    const title = titleEl ? titleEl.innerText.trim() : "N/A";
+    // Extract Link
+    const linkElement = card.querySelector(LINK_SELECTOR);
+    let link = linkElement ? linkElement.href : "N/A";
 
-    // 2. Get University / Subtitle
-    const uniEl = card.querySelector('.list-entry__subtitle, .c-srp-result-card__subtitle, .university-name');
-    const university = uniEl ? uniEl.innerText.trim() : "N/A";
+    // Extract Extra Info (Optional: Modify this to grab deadlines/funding)
+    // Example: const deadline = card.querySelector(".deadline-class")?.innerText;
 
-    // 3. Get Link
-    const linkEl = card.querySelector('a');
-    let link = "N/A";
-    if (linkEl) {
-      link = linkEl.href.startsWith("http") ? linkEl.href : "https://www2.daad.de" + linkEl.getAttribute("href");
-    }
-
-    // 4. Get "hard to reach" details (Location, Language, etc.)
-    // We grab all text in the card, replace newlines with pipes " | "
-    const fullText = card.innerText.replace(/(\r\n|\n|\r)/gm, " | ");
-
-    // Only add if it looks like a valid result
-    if (title !== "N/A" && title !== "") {
-      results.push({
-        "Course/Scholarship Name": title,
-        "University / Institution": university,
-        "Link": link,
-        "Full Details": fullText
-      });
-    }
+    // Add to CSV string
+    csvContent += `${title},${link}\n`;
   });
 
-  return results;
-}
+  // 3. Trigger Download
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "daad_shortlist.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 
-function downloadCSV(data) {
-  if (!data || !data.length) return;
-
-  const headers = Object.keys(data[0]);
-  const csvRows = [];
-  
-  // Header
-  csvRows.push(headers.join(","));
-
-  // Rows
-  for (const row of data) {
-    const values = headers.map(header => {
-      const escaped = ('' + row[header]).replace(/"/g, '\\"');
-      return `"${escaped}"`;
-    });
-    csvRows.push(values.join(","));
-  }
-
-  const csvString = csvRows.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  
-  const a = document.createElement("a");
-  a.style.display = "none";
-  a.href = url;
-  a.download = "daad_results.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
+})();
