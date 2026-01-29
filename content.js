@@ -1,57 +1,36 @@
 (function() {
-  // --- CONFIGURATION ---
-  // These are the classes DAAD typically uses.
-  const SELECTORS = {
-    // The box that holds one result
-    card: ".list-entry, .c-srp-list__item, .js-result-list-entry", 
-    // The course title
-    title: "h3, .c-ad-srp-entry__title",
-    // The university name
-    uni: ".c-ad-srp-entry__organization, .list-entry__institution",
-    // The subject/details
-    details: ".list-entry__sub-header, .c-ad-srp-entry__content"
-  };
+  // Try multiple selector types used by different DAAD pages
+  const cards = document.querySelectorAll('.list-entry, .c-srp-list__item, .result-item');
 
-  // --- LOGIC ---
-  const cards = document.querySelectorAll(SELECTORS.card);
-  
   if (cards.length === 0) {
-    alert("No results found! Make sure you are on the DAAD 'Result List' page.");
+    alert("Extension Error: No results found.\n\n1. Are you on the DAAD search results page?\n2. Did you scroll down to load the courses?");
     return;
   }
 
-  // Build CSV Header
-  let csvContent = "\uFEFF"; // Universal BOM for Excel to read characters correctly
-  csvContent += "Course Name,University,Link,Details\n"; 
+  let csvContent = "\uFEFFCourse Name,University,Link\n"; 
 
   cards.forEach(card => {
-    // 1. Get Title and Link
-    const titleEl = card.querySelector(SELECTORS.title);
-    const linkEl = card.querySelector("a"); // Usually the title itself is the link or wraps it
+    // Attempt to find title in h3, h4, or specific classes
+    const titleEl = card.querySelector('h3, h4, .c-ad-srp-entry__title a');
+    const uniEl = card.querySelector('.list-entry__institution, .c-ad-srp-entry__organization');
     
-    // Clean text: Remove commas to prevent breaking CSV, remove extra spaces
-    const title = titleEl ? titleEl.innerText.replace(/,/g, " -").trim() : "N/A";
-    const link = linkEl ? linkEl.href : "N/A";
-    
-    // 2. Get University
-    const uniEl = card.querySelector(SELECTORS.uni);
-    const uni = uniEl ? uniEl.innerText.replace(/,/g, " -").trim() : "N/A";
+    // Fallback: If no specific title link found, grab the first link in the card
+    const linkEl = titleEl ? titleEl.closest('a') : card.querySelector('a');
 
-    // 3. Get Details (optional extra info)
-    const detailEl = card.querySelector(SELECTORS.details);
-    const detail = detailEl ? detailEl.innerText.replace(/(\r\n|\n|\r)/gm, " | ").replace(/,/g, ";") : "";
+    let title = titleEl ? titleEl.innerText.replace(/,/g, " -").trim() : "Unknown Title";
+    let uni = uniEl ? uniEl.innerText.replace(/,/g, " -").trim() : "Unknown Uni";
+    let link = linkEl ? linkEl.href : "No Link";
 
-    // Add Row
-    csvContent += `"${title}","${uni}","${link}","${detail}"\n`;
+    csvContent += `"${title}","${uni}","${link}"\n`;
   });
 
-  // --- DOWNLOAD TRIGGER ---
-  const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
+  // Create Download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
   const downloadLink = document.createElement("a");
-  downloadLink.setAttribute("href", encodedUri);
-  downloadLink.setAttribute("download", "DAAD_Results.csv");
+  downloadLink.setAttribute("href", url);
+  downloadLink.setAttribute("download", "DAAD_Shortlist.csv");
   document.body.appendChild(downloadLink);
   downloadLink.click();
   document.body.removeChild(downloadLink);
-
 })();
