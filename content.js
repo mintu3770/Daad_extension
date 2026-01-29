@@ -69,7 +69,7 @@
   }
 
   async function startScrape() {
-    // 1. Collect Links (Longest Text Wins Strategy)
+    // 1. Collect Links (Longest Text Wins)
     const allLinks = Array.from(document.querySelectorAll('a[href*="/detail/"]'));
     const urlMap = new Map();
 
@@ -100,40 +100,25 @@
       const task = tasks[i];
       updateOverlay(`<b>Scraping: ${i + 1}/${tasks.length}</b><br>${task.rawTitle.substring(0,30)}...`);
 
-      // --- THE SMART FIX ---
+      // Smart Split Logic
       let courseName = "N/A", uniName = "N/A", cityName = "N/A";
-
-      // 1. Remove Labels AND loose punctuation
-      // Example: "Master's degree • AI" -> " • AI" -> "AI"
       let cleanTitle = task.rawTitle
         .replace(/Master's degree/gi, "")
         .replace(/Bachelor's degree/gi, "")
         .trim();
-
-      // 2. Remove leading bullet points (The "Ghost Bullet" Fix)
-      // Removes any dots, dashes, or bars from the START of the string
+      
       cleanTitle = cleanTitle.replace(/^[•·\-\|]\s*/, "");
 
-      // 3. Smart Split
-      // We ignore empty parts to prevent column shifting
       if (cleanTitle.includes("•")) {
           const parts = cleanTitle.split("•").map(p => p.trim()).filter(p => p.length > 0);
-          
           if (parts.length >= 3) {
-             // Perfect: Course • Uni • City
-             courseName = parts[0];
-             uniName = parts[1];
-             cityName = parts[2];
+             courseName = parts[0]; uniName = parts[1]; cityName = parts[2];
           } else if (parts.length === 2) {
-             // Partial: Course • Uni
-             courseName = parts[0];
-             uniName = parts[1];
+             courseName = parts[0]; uniName = parts[1];
           } else {
-             // Just Course
              courseName = parts[0];
           }
       } else {
-          // No bullets found
           courseName = cleanTitle;
       }
 
@@ -149,7 +134,6 @@
             return el?.nextElementSibling ? clean(el.nextElementSibling) : "N/A";
         };
 
-        // Fallback: If split failed, grab Uni/City from page header
         if (uniName === "N/A" || uniName.length < 3) {
             uniName = clean(doc.querySelector('.c-detail-header__institution'));
         }
@@ -167,15 +151,28 @@
       await new Promise(r => setTimeout(r, 800)); 
     }
 
+    // --- NEW FEATURE: ASK FOR FILENAME ---
+    let userFilename = prompt("Enter a name for your file:", "DAAD_Shortlist");
+    
+    // Fallback if they hit Cancel
+    if (!userFilename) {
+        userFilename = "DAAD_Shortlist"; 
+    }
+    
+    // Auto-add .csv if missing
+    if (!userFilename.toLowerCase().endsWith(".csv")) {
+        userFilename += ".csv";
+    }
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const dl = document.createElement("a");
     dl.href = url;
-    dl.download = `DAAD_Corrected_List.csv`;
+    dl.download = userFilename; // Use user's name
     document.body.appendChild(dl);
     dl.click();
     
-    updateOverlay("<b>✅ Success!</b><br>Columns aligned.");
+    updateOverlay("<b>✅ Success!</b><br>File saved.");
     setTimeout(() => overlay.style.display = 'none', 6000);
   }
 })();
