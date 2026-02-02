@@ -37,4 +37,4 @@ A simple Chrome Extension to automate the extraction of scholarship and course d
 4. Wait for it to scroll to the bottom, then name your file to save it.
 
 ---
-*Created by Mintu *
+*Created by Mintu*
