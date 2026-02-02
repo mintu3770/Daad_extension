@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Mintu's - DAAD Helper",
+  "name": "DAAD Helper",
   "version": "1.0",
-  "description": "Custom tool to download DAAD shortlists.",
+  "description": "Automated tool to download DAAD shortlists to Excel.",
   "permissions": ["activeTab", "scripting"],
   "action": {
     "default_popup": "popup.html",
@@ -16,6 +16,9 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "daad-helper@mintu.com",
+      "strict_min_version": "109.0"
+    },
+    "gecko_android": {
       "strict_min_version": "109.0"
     }
   }
